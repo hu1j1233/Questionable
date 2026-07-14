@@ -132,7 +132,7 @@ internal sealed class MovementController
                 }
 
                 List<Vector3> navPoints = pathfindResult.Skip(1).ToList();
-                Vector3 start = objectTable[0]?.Position ?? navPoints[0];
+                Vector3 start = objectTable[0]?.Position ?? pathfindResult[0];
                 if (Destination.IsFlying && !condition[ConditionFlag.InFlight] && condition[ConditionFlag.Mounted])
                 {
                     if (IsOnFlightPath(start) || navPoints.Any(IsOnFlightPath))
@@ -164,6 +164,39 @@ internal sealed class MovementController
                 }
 
                 navPoints = Destination.PartialRoute.Concat(navPoints).ToList();
+                if (navPoints.Count == 0)
+                {
+                    float distanceToDestination = Vector3.Distance(start, Destination.Position);
+                    float verticalDistance = Math.Abs(start.Y - Destination.Position.Y);
+                    if (distanceToDestination <= Destination.StopDistance &&
+                        verticalDistance <= Destination.VerticalStopDistance)
+                    {
+                        logger.LogInformation(
+                            "Pathfinding returned no movement points because destination is already reached (distance={Distance}, verticalDistance={VerticalDistance}, stopDistance={StopDistance})",
+                            distanceToDestination, verticalDistance, Destination.StopDistance);
+                        MovementStartedAt = DateTime.Now.AddSeconds(-2);
+                        Stop();
+                        return;
+                    }
+
+                    if (!Destination.ShouldRecalculateNavmesh())
+                    {
+                        string error =
+                            $"Pathfinding returned no movement points while destination is still {distanceToDestination:F2} yalms away";
+                        logger.LogError(
+                            "{Error}; calculations={Calculations}, start={Start}, destination={Destination}",
+                            error, Destination.NavmeshCalculations, start, Destination.Position);
+                        Stop();
+                        throw new PathfindingFailedException(error);
+                    }
+
+                    logger.LogWarning(
+                        "Pathfinding returned no movement points; retrying navigation (distance={Distance}, calculations={Calculations})",
+                        distanceToDestination, Destination.NavmeshCalculations);
+                    Restart(Destination);
+                    return;
+                }
+
                 logger.LogInformation("Navigating via route (XZ:{Distance}) [{Route}]",
                     navPoints[0].DistanceTo_XZ(navPoints[^1]),
                     string.Join(" → ", pathfindResult.Select(x => x.ToString("G", CultureInfo.InvariantCulture))));
@@ -275,6 +308,7 @@ internal sealed class MovementController
 
     private void Restart(DestinationData destination)
     {
+        int previousNavmeshCalculations = destination.NavmeshCalculations;
         Stop();
 
         NavigationOptions options = new()
@@ -286,6 +320,9 @@ internal sealed class MovementController
             NavigateTo(EMovementType.None, destination.DataId, destination.Position, options);
         else
             NavigateTo(EMovementType.None, destination.DataId, [destination.Position], options);
+
+        if (Destination != null)
+            Destination.NavmeshCalculations = previousNavmeshCalculations + 1;
     }
 
     private bool IsOnFlightPath(Vector3 p)

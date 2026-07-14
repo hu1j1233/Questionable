@@ -73,11 +73,22 @@ internal static class EquipItem
         private Item? _item;
         private List<ushort> _targetSlots = null!;
         private Job? _jobSwitchRequired;
+        private bool _jobSwitchQueuedLogged;
 
         public override unsafe ETaskResult Update()
         {
             if (_jobSwitchRequired is not null)
+            {
+                if (!_jobSwitchQueuedLogged)
+                {
+                    logger.LogInformation(
+                        "Equip {ItemId}: waiting to insert SwitchJob({TargetJob}) before retrying; current={CurrentJob}, attempts={Attempts}",
+                        Task.ItemId, _jobSwitchRequired, GetCurrentJob(), _attempts);
+                    _jobSwitchQueuedLogged = true;
+                }
+
                 return ETaskResult.CreateNewTasks;
+            }
 
             if (DateTime.Now < _continueAt)
                 return ETaskResult.StillRunning;
@@ -100,6 +111,11 @@ internal static class EquipItem
 
         public bool OnErrorToast(SeString message)
         {
+            logger.LogWarning(
+                "Equip {ItemId} received error toast: {Toast}; item={ItemName}, slotCategory={SlotCategory}, current={CurrentJob}, retryAfterJobSwitch={RetryAfterJobSwitch}, attempts={Attempts}",
+                Task.ItemId, message.TextValue, _item?.Name, _item?.EquipSlotCategory.RowId, GetCurrentJob(),
+                Task.RetryAfterJobSwitch, _attempts);
+
             if (!Task.RetryAfterJobSwitch &&
                 _item is { } item &&
                 item.EquipSlotCategory.RowId == 17 &&
@@ -113,6 +129,14 @@ internal static class EquipItem
                 return true;
             }
 
+            if (_item is { } soulCrystal && soulCrystal.EquipSlotCategory.RowId == 17 &&
+                IsUnableToEquipMessage(message.TextValue))
+            {
+                logger.LogError(
+                    "Equip {ItemId}: recognized soul crystal job-switch error, but could not resolve exactly one target job from ClassJobCategory={ClassJobCategory}",
+                    Task.ItemId, soulCrystal.ClassJobCategory.RowId);
+            }
+
             string? insufficientArmoryChestSpace = DataManagerAdapter.GetString<LogMessage>(dataManager, 709, x => x.Text);
             if (GameFunctions.GameStringEquals(message.TextValue, insufficientArmoryChestSpace))
                 _attempts = MaxAttempts;
@@ -123,8 +147,14 @@ internal static class EquipItem
         public IEnumerable<ITask> CreateExtraTasks()
         {
             if (_jobSwitchRequired is not Job soulCrystalJob)
+            {
+                logger.LogWarning("Equip {ItemId}: CreateExtraTasks called without a pending job switch", Task.ItemId);
                 yield break;
+            }
 
+            logger.LogInformation(
+                "Equip {ItemId}: inserting SwitchJob({TargetJob}) then Equip retry; remaining task will stay behind these tasks",
+                Task.ItemId, soulCrystalJob);
             yield return new SwitchClassJob.Task(soulCrystalJob);
             yield return new Task(Task.ItemId, RetryAfterJobSwitch: true);
         }
@@ -137,6 +167,11 @@ internal static class EquipItem
                     throw new ArgumentOutOfRangeException(nameof(Task.ItemId));
             _targetSlots = GetEquipSlot(_item) ?? throw new InvalidOperationException("Not a piece of equipment");
 
+            logger.LogInformation(
+                "Starting Equip {ItemId}: item={ItemName}, slotCategory={SlotCategory}, targetSlots={TargetSlots}, current={CurrentJob}, retryAfterJobSwitch={RetryAfterJobSwitch}",
+                Task.ItemId, _item.Value.Name, _item.Value.EquipSlotCategory.RowId, string.Join(',', _targetSlots),
+                GetCurrentJob(), Task.RetryAfterJobSwitch);
+
             Equip();
             _continueAt = DateTime.Now.AddSeconds(1);
             return true;
@@ -145,16 +180,25 @@ internal static class EquipItem
         private unsafe void Equip()
         {
             ++_attempts;
+            logger.LogInformation(
+                "Equip {ItemId} attempt {Attempt}/{MaxAttempts}: item={ItemName}, current={CurrentJob}, targetSlots={TargetSlots}",
+                Task.ItemId, _attempts, MaxAttempts, _item?.Name, GetCurrentJob(), string.Join(',', _targetSlots));
             if (_attempts > MaxAttempts)
                 throw new TaskException("Unable to equip gear.");
 
             InventoryManager* inventoryManager = InventoryManager.Instance();
             if (inventoryManager == null)
+            {
+                logger.LogWarning("Equip {ItemId}: InventoryManager is unavailable", Task.ItemId);
                 return;
+            }
 
             InventoryContainer* equippedContainer = inventoryManager->GetInventoryContainer(InventoryType.EquippedItems);
             if (equippedContainer == null)
+            {
+                logger.LogWarning("Equip {ItemId}: EquippedItems container is unavailable", Task.ItemId);
                 return;
+            }
 
             foreach (ushort slot in _targetSlots)
             {
@@ -204,6 +248,9 @@ internal static class EquipItem
                 }
             }
 
+            logger.LogError(
+                "Equip {ItemId}: item was not found in any source inventory; current={CurrentJob}, sourceInventories={SourceInventories}",
+                Task.ItemId, GetCurrentJob(), string.Join(',', SourceInventoryTypes));
             throw new TaskException($"Could not equip item {Task.ItemId}.");
         }
 
@@ -233,11 +280,15 @@ internal static class EquipItem
                 return false;
 
             IReadOnlyList<Job> jobs = QuestInfoUtils.AsList(classJobCategory);
-            if (jobs.Count != 1)
+            Job[] actualJobs = jobs
+                .Where(x => !GameDataAdapter.IsClass(x))
+                .Distinct()
+                .ToArray();
+            if (actualJobs.Length != 1)
                 return false;
 
-            job = jobs[0];
-            return job != Job.ADV;
+            job = actualJobs[0];
+            return true;
         }
 
         private static unsafe Job GetCurrentJob()
