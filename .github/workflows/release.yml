@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-version.outputs.version }}
+      package-version: ${{ steps.get-version.outputs.package-version }}
       should-release: ${{ steps.check-release.outputs.should-release }}
       tag-exists: ${{ steps.check-tag.outputs.exists }}
       testing: ${{ steps.is-testing.outputs.testing }}
@@ -42,12 +43,19 @@ jobs:
         run: |
           # Extract version using xmllint for more reliable parsing
           if command -v xmllint >/dev/null 2>&1; then
-            VERSION=$(xmllint --xpath "string(//PropertyGroup/Version)" Directory.Build.targets 2>/dev/null || true)
+            PACKAGE_VERSION=$(xmllint --xpath "string(//PropertyGroup/Version)" Directory.Build.targets 2>/dev/null || true)
+            VERSION=$(xmllint --xpath "string(//PropertyGroup/ReleaseVersion)" Directory.Build.targets 2>/dev/null || true)
           fi
           
           # Fallback to grep if xmllint fails or is not available
+          if [ -z "$PACKAGE_VERSION" ]; then
+            PACKAGE_VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.targets | head -1)
+          fi
           if [ -z "$VERSION" ]; then
-            VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.targets | head -1)
+            VERSION=$(grep -oP '<ReleaseVersion>\K[^<]+' Directory.Build.targets | head -1)
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION="$PACKAGE_VERSION"
           fi
           
           if [ -z "$VERSION" ]; then
@@ -56,7 +64,9 @@ jobs:
           fi
           
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Detected version: $VERSION"
+          echo "package-version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "Detected release version: $VERSION"
+          echo "Detected package version: $PACKAGE_VERSION"
       - name: Check if branch is testing
         id: is-testing
         run: |
