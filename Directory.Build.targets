@@ -1,9 +1,9 @@
 <Project>
     <PropertyGroup Condition="$(MSBuildProjectName) != 'GatheringPathRenderer'">
         <!-- Dalamud/NuGet versions are limited to four numeric components. -->
-        <Version>15.306.0.9</Version>
+        <Version>15.306.0.10</Version>
         <!-- Human-facing GitHub release tag for this build. -->
-        <ReleaseVersion>15.306.0.8.1</ReleaseVersion>
+        <ReleaseVersion>15.306.0.8.2</ReleaseVersion>
     </PropertyGroup>
 
     <PropertyGroup>

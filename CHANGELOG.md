@@ -1,2 +1,3 @@
+- Fix: use Chinese in-game aetheryte names for DailyRoutines teleport and fall back to Lifestream when BetterTeleport is unavailable.
 - Feature: add AEAssist combat support and DailyRoutines compatibility.
 - Feature: AutoHook presets can be embedded in quest paths now -alydev

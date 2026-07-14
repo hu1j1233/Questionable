@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Questionable.Controller;
 using Questionable.Data;
 using Questionable.Model.Common;
-using Questionable.Model.Questing.Converter;
 
 namespace Questionable.External;
 
@@ -143,14 +142,37 @@ internal sealed class DailyRoutinesIpc : IDisposable
             EAetheryteLocation.FirmamentHoarfrostHall => GetPlaceName(3528),
             EAetheryteLocation.FirmamentWesternRisensongQuarter => GetPlaceName(3646),
             EAetheryteLocation.FirmamentEasternRisensongQuarter => GetPlaceName(3645),
-            _ => GetAetheryteName(aetheryteLocation),
+            _ => aetheryteLocation.ToFriendlyString(),
         };
 
         if (string.IsNullOrEmpty(name))
             return false;
 
+        try
+        {
+            bool? moduleState = IsModuleEnabled("BetterTeleport");
+            if (moduleState == null)
+                return false;
+
+            if (moduleState == false && !LoadModule("BetterTeleport", affectConfig: false))
+                return false;
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Could not prepare DailyRoutines BetterTeleport");
+            return false;
+        }
+
         _logger.LogInformation("Teleporting to '{Name}'", name);
-        _frameworkManager.RunOnTick(() =>
+        _frameworkManager.RunOnTick(() => ExecuteTeleport(name), TimeSpan.FromMilliseconds(800));
+        return true;
+    }
+
+    private string GetPlaceName(uint rowId) => _dataManager.GetExcelSheet<PlaceName>().GetRow(rowId).Name.ToString();
+
+    private void ExecuteTeleport(string name)
+    {
+        try
         {
             bool? moduleState = IsModuleEnabled("BetterTeleport");
             if (moduleState == null)
@@ -159,20 +181,37 @@ internal sealed class DailyRoutinesIpc : IDisposable
                 return;
             }
 
-            if (moduleState == false)
-                LoadModule("BetterTeleport", affectConfig: false);
+            if (moduleState == false && !LoadModule("BetterTeleport", affectConfig: false))
+            {
+                _logger.LogError("Could not load BetterTeleport module in DailyRoutines");
+                return;
+            }
 
-            _commandManager.ProcessCommand($"/pdrtelepo {name}");
-        }, TimeSpan.FromMilliseconds(800));
-        return true;
+            // Loading a module is asynchronous in some DailyRoutines versions.
+            // Give it one more framework tick before invoking its command.
+            _frameworkManager.RunOnTick(() =>
+            {
+                try
+                {
+                    if (IsModuleEnabled("BetterTeleport") != true)
+                    {
+                        _logger.LogError("BetterTeleport module did not become ready in DailyRoutines");
+                        return;
+                    }
+
+                    _commandManager.ProcessCommand($"/pdrtelepo {name}");
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "Could not invoke DailyRoutines BetterTeleport");
+                }
+            }, TimeSpan.FromMilliseconds(500));
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Could not prepare DailyRoutines BetterTeleport");
+        }
     }
-
-    private string GetPlaceName(uint rowId) => _dataManager.GetExcelSheet<PlaceName>().GetRow(rowId).Name.ToString();
-
-    private static string GetAetheryteName(EAetheryteLocation aetheryteLocation) =>
-        AethernetShardConverter.Values.TryGetValue(aetheryteLocation, out string? name)
-            ? name
-            : aetheryteLocation.ToString();
 
     public void Dispose()
     {

@@ -223,11 +223,17 @@ internal static class AethernetShortcut
 
         private void DoTeleport()
         {
-            logger.LogInformation("Using lifestream to teleport to {Destination}", Task.To);
-            if (configuration.General.UsingDailyRoutinesTeleport && dailyRoutinesIpc.IsDailyRoutinesEnabled)
-                dailyRoutinesIpc.Teleport(Task.To);
+            bool dailyRoutinesTeleport = configuration.General.UsingDailyRoutinesTeleport &&
+                                          dailyRoutinesIpc.IsDailyRoutinesEnabled &&
+                                          dailyRoutinesIpc.Teleport(Task.To);
+            if (dailyRoutinesTeleport)
+                logger.LogInformation("Using DailyRoutines to teleport to {Destination}", Task.To);
             else
+            {
+                logger.LogInformation("Using lifestream to teleport to {Destination}", Task.To);
                 lifestreamIpc.Teleport(Task.To);
+            }
+
             _teleported = true;
         }
 
