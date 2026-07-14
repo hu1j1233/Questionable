@@ -1,1 +1,2 @@
+- Feature: add AEAssist combat support and DailyRoutines compatibility.
 - Feature: AutoHook presets can be embedded in quest paths now -alydev

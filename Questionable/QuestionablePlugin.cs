@@ -178,6 +178,7 @@ public sealed class QuestionablePlugin : IDalamudPlugin
         serviceCollection.AddSingleton<StylistIpc>();
 
         serviceCollection.AddSingleton<GearStatsCalculator>();
+        serviceCollection.AddSingleton<DailyRoutinesIpc>();
     }
 
     private static void AddTaskFactories(ServiceCollection serviceCollection)
@@ -343,6 +344,7 @@ public sealed class QuestionablePlugin : IDalamudPlugin
         serviceCollection.AddSingleton<ICombatModule, BossModModule>();
         serviceCollection.AddSingleton<ICombatModule, WrathComboModule>();
         serviceCollection.AddSingleton<ICombatModule, RotationSolverRebornModule>();
+        serviceCollection.AddSingleton<ICombatModule, AeAssistModule>();
     }
 
     private static void AddWindows(ServiceCollection serviceCollection)
@@ -430,6 +432,7 @@ public sealed class QuestionablePlugin : IDalamudPlugin
         serviceProvider.GetRequiredService<DalamudInitializer>();
         serviceProvider.GetRequiredService<TextAdvanceIpc>();
         serviceProvider.GetRequiredService<YesAlreadyIpc>();
+        serviceProvider.GetRequiredService<DailyRoutinesIpc>();
 
         pathDataUpdater.CheckForUpdates();
     }

@@ -228,6 +228,8 @@ internal sealed class Configuration : IPluginConfiguration
         public bool DismissedReportWarning { get; set; }
         public bool ReportsDisabled { get; set; }
         public string ReportMessage { get; set; } = "";
+        public bool ConfigureDailyRoutines { get; set; } = true;
+        public bool UsingDailyRoutinesTeleport { get; set; }
         public string DisplayName { get; set; } = "Anonymous";
         public string Language { get; set; } = "en";
         public bool HideRemainingTasks { get; set; }

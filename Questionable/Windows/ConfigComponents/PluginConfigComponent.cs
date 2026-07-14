@@ -82,6 +82,14 @@ internal sealed class PluginConfigComponent
                     new(
                         "https://raw.githubusercontent.com/FFXIV-CombatReborn/CombatRebornRepo/main/pluginmaster.json"),
                     "/rsr")
+            },
+            {
+                ECombatModule.AEAssist,
+                new("AEAssist",
+                    "AEAssistV3",
+                    "AEAssist 需要单独安装，请自行寻找安装方式。",
+                    new("https://github.com/FFXIV-CombatReborn/AEAssist"),
+                    null)
             }
         }.AsReadOnly();
     private readonly CombatController _combatController = combatController;
@@ -211,6 +219,7 @@ internal sealed class PluginConfigComponent
                 {
                     allRequiredInstalled &=
                         DrawCombatPlugin(ECombatModule.RotationSolverReborn, checklistPadding);
+                    allRequiredInstalled &= DrawCombatPlugin(ECombatModule.AEAssist, checklistPadding);
                 }
             }
         }

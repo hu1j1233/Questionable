@@ -70,7 +70,9 @@ internal static class AethernetShortcut
         TerritoryData territoryData,
         LifestreamIpc lifestreamIpc,
         MovementController movementController,
-        ICondition condition) : TaskExecutor<Task>
+        ICondition condition,
+        Configuration configuration,
+        DailyRoutinesIpc dailyRoutinesIpc) : TaskExecutor<Task>
     {
         private DateTime _continueAt = DateTime.MinValue;
         private bool _moving;
@@ -134,6 +136,14 @@ internal static class AethernetShortcut
                 if (aetheryteData.CalculateDistance(playerPosition, territoryType, Task.From) <
                     aetheryteData.CalculateDistance(playerPosition, territoryType, Task.To))
                 {
+                    if (configuration.General.UsingDailyRoutinesTeleport &&
+                        dailyRoutinesIpc.IsDailyRoutinesEnabled &&
+                        (aetheryteData.IsCityAetheryte(Task.To) || aetheryteData.IsAirshipLanding(Task.To)))
+                    {
+                        DoTeleport();
+                        return true;
+                    }
+
                     if (aetheryteData.CalculateDistance(playerPosition, territoryType, Task.From) <
                         (Task.From.IsFirmamentAetheryte() ? 11f : 4f))
                     {
@@ -214,7 +224,10 @@ internal static class AethernetShortcut
         private void DoTeleport()
         {
             logger.LogInformation("Using lifestream to teleport to {Destination}", Task.To);
-            lifestreamIpc.Teleport(Task.To);
+            if (configuration.General.UsingDailyRoutinesTeleport && dailyRoutinesIpc.IsDailyRoutinesEnabled)
+                dailyRoutinesIpc.Teleport(Task.To);
+            else
+                lifestreamIpc.Teleport(Task.To);
             _teleported = true;
         }
 

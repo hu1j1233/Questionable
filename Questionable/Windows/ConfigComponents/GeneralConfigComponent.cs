@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -31,6 +32,7 @@ internal sealed class GeneralConfigComponent : ConfigComponent
 
     private readonly QuestRegistry _questRegistry;
     private readonly TerritoryData _territoryData;
+    private readonly DailyRoutinesIpc _dailyRoutinesIpc;
     private readonly Lazy<List<Job>> _sortedClassJobs;
     private readonly Lazy<(uint[] Ids, string[] Names)> _mounts;
     private readonly Lazy<(Job[] Ids, string[] Names)> _classJobs;
@@ -45,11 +47,13 @@ internal sealed class GeneralConfigComponent : ConfigComponent
         IDataManager dataManager,
         ClassJobUtils classJobUtils,
         QuestRegistry questRegistry,
-        TerritoryData territoryData)
+        TerritoryData territoryData,
+        DailyRoutinesIpc dailyRoutinesIpc)
         : base(pluginInterface, configuration)
     {
         _questRegistry = questRegistry;
         _territoryData = territoryData;
+        _dailyRoutinesIpc = dailyRoutinesIpc;
 
         _sortedClassJobs = new(() => [.. classJobUtils.SortedClassJobs.Select(x => x.ClassJob)]);
         _mounts = new(() => BuildMounts(dataManager));
@@ -420,7 +424,37 @@ internal sealed class GeneralConfigComponent : ConfigComponent
                 ImGui.Unindent();
             }
 #endif
+        }
+
+        if (_dailyRoutinesIpc.IsDailyRoutinesEnabled)
+        {
+            ImGui.Separator();
+            ImGui.Text("DailyRoutines 兼容性");
+            using (ImRaii.PushIndent())
+            {
+                bool configureDailyRoutines = Configuration.General.ConfigureDailyRoutines;
+                if (ImGui.Checkbox("插件工作时临时禁用 Daily Routines 中的冲突模块", ref configureDailyRoutines))
+                {
+                    Configuration.General.ConfigureDailyRoutines = configureDailyRoutines;
+                    Save();
+                }
+
+                ImGuiComponents.HelpMarker(
+                    $"{string.Join("\n", _dailyRoutinesIpc.ConflictingModules)}\n如果你发现还有其他冲突模块未列入，请联系汉化作者。");
+
+                bool useDailyRoutinesTeleport = Configuration.General.UsingDailyRoutinesTeleport;
+                if (ImGui.Checkbox("使用 Daily Routines 进行小水晶传送（请仔细阅读右侧说明）",
+                        ref useDailyRoutinesTeleport))
+                {
+                    Configuration.General.UsingDailyRoutinesTeleport = useDailyRoutinesTeleport;
+                    Save();
+                }
+
+                ImGuiComponents.HelpMarker("使用【更好的传送界面】模块，如果未启用将帮你自动启用。\n" +
+                                           "勾选后，主城内将不会再寻路前往小水晶传送，而是直接瞬移，使用请自负风险。\n" +
+                                           "如果遇到任何问题，请安装 Lifestream 并禁用此选项。");
             }
         }
     }
+}
 }
