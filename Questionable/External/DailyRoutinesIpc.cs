@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Questionable.Controller;
 using Questionable.Data;
 using Questionable.Model.Common;
+using Questionable.Model.Questing.Converter;
 
 namespace Questionable.External;
 
@@ -142,7 +143,7 @@ internal sealed class DailyRoutinesIpc : IDisposable
             EAetheryteLocation.FirmamentHoarfrostHall => GetPlaceName(3528),
             EAetheryteLocation.FirmamentWesternRisensongQuarter => GetPlaceName(3646),
             EAetheryteLocation.FirmamentEasternRisensongQuarter => GetPlaceName(3645),
-            _ => aetheryteLocation.ToFriendlyString(),
+            _ => GetAetheryteName(aetheryteLocation),
         };
 
         if (string.IsNullOrEmpty(name))
@@ -167,6 +168,11 @@ internal sealed class DailyRoutinesIpc : IDisposable
     }
 
     private string GetPlaceName(uint rowId) => _dataManager.GetExcelSheet<PlaceName>().GetRow(rowId).Name.ToString();
+
+    private static string GetAetheryteName(EAetheryteLocation aetheryteLocation) =>
+        AethernetShardConverter.Values.TryGetValue(aetheryteLocation, out string? name)
+            ? name
+            : aetheryteLocation.ToString();
 
     public void Dispose()
     {
