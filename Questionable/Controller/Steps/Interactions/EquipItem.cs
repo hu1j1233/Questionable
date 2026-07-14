@@ -3,13 +3,18 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Plugin.Services;
+using ECommons.ExcelServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using Microsoft.Extensions.Logging;
+using Questionable.Controller.Steps.Shared;
 using Questionable.Data;
+using Questionable.Domain;
 using Questionable.Functions;
 using Questionable.Model.Questing;
 using Quest = Questionable.Domain.Quest;
+using static Questionable.Controller.Steps.ITaskExecutor;
 
 namespace Questionable.Controller.Steps.Interactions;
 
@@ -28,7 +33,7 @@ internal static class EquipItem
         }
     }
 
-    internal sealed record Task(uint ItemId) : ITask
+    internal sealed record Task(uint ItemId, bool RetryAfterJobSwitch = false) : ITask
     {
         public override string ToString() => $"Equip({ItemId})";
     }
@@ -36,7 +41,7 @@ internal static class EquipItem
     internal sealed class DoEquip
     (
         IDataManager dataManager,
-        ILogger<DoEquip> logger) : TaskExecutor<Task>, IToastAware
+        ILogger<DoEquip> logger) : TaskExecutor<Task>, IToastAware, IExtraTaskCreator
     {
         private const int MaxAttempts = 3;
 
@@ -67,9 +72,13 @@ internal static class EquipItem
         private DateTime _continueAt = DateTime.MaxValue;
         private Item? _item;
         private List<ushort> _targetSlots = null!;
+        private Job? _jobSwitchRequired;
 
         public override unsafe ETaskResult Update()
         {
+            if (_jobSwitchRequired is not null)
+                return ETaskResult.CreateNewTasks;
+
             if (DateTime.Now < _continueAt)
                 return ETaskResult.StillRunning;
 
@@ -91,11 +100,33 @@ internal static class EquipItem
 
         public bool OnErrorToast(SeString message)
         {
+            if (!Task.RetryAfterJobSwitch &&
+                _item is { } item &&
+                item.EquipSlotCategory.RowId == 17 &&
+                IsUnableToEquipMessage(message.TextValue) &&
+                TryGetSoulCrystalJob(item, out Job soulCrystalJob))
+            {
+                _jobSwitchRequired = soulCrystalJob;
+                logger.LogWarning(
+                    "Unable to equip soul crystal {Item} while on {CurrentJob}; switching to {TargetJob} before retrying",
+                    item.Name, GetCurrentJob(), soulCrystalJob);
+                return true;
+            }
+
             string? insufficientArmoryChestSpace = DataManagerAdapter.GetString<LogMessage>(dataManager, 709, x => x.Text);
             if (GameFunctions.GameStringEquals(message.TextValue, insufficientArmoryChestSpace))
                 _attempts = MaxAttempts;
 
             return false;
+        }
+
+        public IEnumerable<ITask> CreateExtraTasks()
+        {
+            if (_jobSwitchRequired is not Job soulCrystalJob)
+                yield break;
+
+            yield return new SwitchClassJob.Task(soulCrystalJob);
+            yield return new Task(Task.ItemId, RetryAfterJobSwitch: true);
         }
 
         public override bool ShouldInterruptOnDamage() => true;
@@ -188,6 +219,31 @@ internal static class EquipItem
                 17 => [13], // soul crystal
                 var _ => null
             };
+        }
+
+        private static bool IsUnableToEquipMessage(string message) =>
+            message.Contains("无法装备", StringComparison.Ordinal) ||
+            message.Contains("cannot equip", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("can't equip", StringComparison.OrdinalIgnoreCase);
+
+        private static bool TryGetSoulCrystalJob(Item item, out Job job)
+        {
+            job = Job.ADV;
+            if (item.ClassJobCategory.ValueNullable is not { } classJobCategory)
+                return false;
+
+            IReadOnlyList<Job> jobs = QuestInfoUtils.AsList(classJobCategory);
+            if (jobs.Count != 1)
+                return false;
+
+            job = jobs[0];
+            return job != Job.ADV;
+        }
+
+        private static unsafe Job GetCurrentJob()
+        {
+            PlayerState* playerState = PlayerState.Instance();
+            return playerState != null ? (Job)playerState->CurrentClassJobId : Job.ADV;
         }
     }
 }
