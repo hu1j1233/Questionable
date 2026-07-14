@@ -112,7 +112,7 @@ internal sealed class AlliedSocietyJournalComponent
             (EAlliedSocietyRank rank, ushort currentRep, ushort neededRep) = questFunctions.GetAlliedSocietyRankAndRep(alliedSociety);
 
             string rep = neededRep != 0 ? $"({rank} {currentRep}/{neededRep}) " : "";
-            string label = $"{rep}{alliedSociety}###AlliedSociety{(int)alliedSociety}";
+            string label = $"{rep}{alliedSociety.ToFriendlyString()}###AlliedSociety{(int)alliedSociety}";
             bool isOpen;
 
             using (ImRaii.Disabled(quests.Count == 0))
