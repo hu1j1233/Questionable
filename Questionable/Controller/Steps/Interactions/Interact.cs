@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -130,13 +131,15 @@ internal static class Interact
         ICondition condition,
         IObjectTable objectTable,
         ILogger<DoInteract> logger)
-        : TaskExecutor<Task>, IConditionChangeAware
+        : TaskExecutor<Task>, IConditionChangeAware, IToastAware
     {
         private DateTime _continueAt = DateTime.MinValue;
         private EInteractionState _interactionState = EInteractionState.None;
         private bool _needsFacing;
         private bool _needsUnmount;
         private bool _reportedGameObjNull;
+        private int _lastGearsetSlot = -1;
+        private readonly HashSet<int> _invalidGearsetSlots = [];
 
         /// <summary>
         ///     A slight delay when we think an interaction has ended, to make sure that we're processing "Action cancelled"
@@ -265,7 +268,9 @@ internal static class Interact
                             acceptableJobs = [.. acceptableJobs.Prepend(configuration.General.GatheringJob)];
                     }
 
-                    logger.LogInformation("Current ClassJob {PlayerJob} not valid for {QuestId}, attempting to switch", playerJob, Task.Quest.Id);
+                    logger.LogInformation(
+                        "Current ClassJob {PlayerJob} not valid for {QuestId}, attempting to switch to {TargetJob}",
+                        playerJob, Task.Quest.Id, acceptableJobs[0]);
                     unsafe
                     {
                         bool changed = false;
@@ -277,16 +282,37 @@ internal static class Interact
                                 RaptureGearsetModule.GearsetEntry* gearset = gearsetModule->GetGearset(i);
                                 if (gearset == null)
                                     continue;
-                                if (acceptableJobs[0].Equals((Job)gearset->ClassJob))
+
+                                bool exists = gearset->Flags.HasFlag(RaptureGearsetModule.GearsetFlag.Exists);
+                                logger.LogDebug(
+                                    "DoInteract gearset slot {Slot}: id={GearsetId}, classJob={GearsetJob}, flags={Flags}, exists={Exists}, invalid={Invalid}",
+                                    i, gearset->Id, (Job)gearset->ClassJob, gearset->Flags, exists,
+                                    _invalidGearsetSlots.Contains(i));
+
+                                if (exists && !_invalidGearsetSlots.Contains(i) &&
+                                    acceptableJobs[0].Equals((Job)gearset->ClassJob))
                                 {
+                                    logger.LogInformation(
+                                        "DoInteract selecting gearset: slot={Slot}, id={GearsetId}, target={TargetJob}, flags={Flags}",
+                                        i, gearset->Id, acceptableJobs[0], gearset->Flags);
+                                    _lastGearsetSlot = i;
                                     gearsetModule->EquipGearset(gearset->Id);
                                     changed = true;
+                                    break;
                                 }
                             }
+                        }
+                        else
+                        {
+                            logger.LogError("DoInteract cannot switch job: RaptureGearsetModule is unavailable, target={TargetJob}",
+                                acceptableJobs[0]);
                         }
 
                         if (!changed)
                         {
+                            logger.LogError(
+                                "DoInteract could not find a usable gearset for target={TargetJob}; invalidSlots={InvalidSlots}",
+                                acceptableJobs[0], string.Join(',', _invalidGearsetSlots));
                             throw new Exception($"Quest {Task.Quest.Info.Name} requires a job like {acceptableJobs[0]}, " +
                                                "but you do not have a valid job configured in QST Settings.");
                         }
@@ -302,6 +328,24 @@ internal static class Interact
 
             TriggerInteraction(gameObject);
             return ETaskResult.StillRunning;
+        }
+
+        public bool OnErrorToast(SeString message)
+        {
+            if (_lastGearsetSlot >= 0 &&
+                (message.TextValue.Contains("指定的套装存在问题", StringComparison.Ordinal) ||
+                 message.TextValue.Contains("problem with the specified gearset", StringComparison.OrdinalIgnoreCase)))
+            {
+                logger.LogWarning(
+                    "DoInteract gearset rejected: slot={Slot}, toast={Toast}; marking it invalid and trying another matching gearset",
+                    _lastGearsetSlot, message.TextValue);
+                _invalidGearsetSlots.Add(_lastGearsetSlot);
+                _lastGearsetSlot = -1;
+                _continueAt = DateTime.Now.AddSeconds(0.2);
+                return true;
+            }
+
+            return false;
         }
 
         public void OnConditionChange(ConditionFlag flag, bool value)
