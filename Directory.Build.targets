@@ -1,9 +1,9 @@
 <Project>
     <PropertyGroup Condition="$(MSBuildProjectName) != 'GatheringPathRenderer'">
         <!-- Keep the local plugin version independent from upstream Questionable releases. -->
-        <Version>2026.7.14.1</Version>
+        <Version>2026.7.17.1</Version>
         <!-- Human-facing GitHub release tag for this local build. -->
-        <ReleaseVersion>2026.7.14.1</ReleaseVersion>
+        <ReleaseVersion>2026.7.17.1</ReleaseVersion>
     </PropertyGroup>
 
     <PropertyGroup>

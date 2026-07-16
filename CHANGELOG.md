@@ -1,3 +1,6 @@
+- Fix: improve soul crystal and class-job switching by selecting existing matching gearsets safely.
+- Fix: retry job switching with another matching gearset when the selected gearset is rejected.
+- Fix: preserve segmented movement routes and guard against empty navigation results.
 - Fix: use Chinese in-game aetheryte names for DailyRoutines teleport and fall back to Lifestream when BetterTeleport is unavailable.
 - Feature: add AEAssist combat support and DailyRoutines compatibility.
 - Feature: AutoHook presets can be embedded in quest paths now -alydev
